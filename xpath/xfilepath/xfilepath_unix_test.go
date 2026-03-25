@@ -115,6 +115,74 @@ func TestWalkSymlinkLoopSymlinks(t *testing.T) {
 	)
 }
 
+// TestWalkSymlinkSubdirCircularNoSymlinks is a baseline: without symlink
+// following, aaa_link/real_dir (a symlink) is not followed, so only
+// real_dir/file.proto (via the real directory) and top.proto are visible.
+func TestWalkSymlinkSubdirCircularNoSymlinks(t *testing.T) {
+	t.Parallel()
+	filePaths, err := testWalkGetRegularFilePaths(
+		filepath.Join("testdata", "symlink_subdir_circular"),
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		[]string{
+			"real_dir/file.proto",
+			"top.proto",
+		},
+		filePaths,
+	)
+}
+
+// TestWalkSymlinkSubdirCircularSymlinksRelative walks with symlinks enabled
+// using a relative starting path. This already worked before the fix because
+// relative walk paths and EvalSymlinks absolute paths never collide in the map.
+func TestWalkSymlinkSubdirCircularSymlinksRelative(t *testing.T) {
+	t.Parallel()
+	filePaths, err := testWalkGetRegularFilePaths(
+		filepath.Join("testdata", "symlink_subdir_circular"),
+		WalkWithSymlinks(),
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		[]string{
+			"aaa_link/real_dir/file.proto",
+			"real_dir/file.proto",
+			"top.proto",
+		},
+		filePaths,
+	)
+}
+
+// TestWalkSymlinkSubdirCircularSymlinksAbsolute is a regression test for
+// https://github.com/bufbuild/buf/issues/3815.
+//
+// The testdata has aaa_link/real_dir -> ../real_dir (a symlink alphabetically
+// before the real real_dir/). When walking from an absolute path, EvalSymlinks
+// returns an absolute resolved path for the symlink. Without the fix, the real
+// real_dir/ (whose walkPath == resolvedPath) would share the same map key as
+// the symlink's resolved path, causing real_dir/ to be incorrectly skipped.
+func TestWalkSymlinkSubdirCircularSymlinksAbsolute(t *testing.T) {
+	t.Parallel()
+	absDir, err := filepath.Abs(filepath.Join("testdata", "symlink_subdir_circular"))
+	require.NoError(t, err)
+	filePaths, err := testWalkGetRegularFilePaths(
+		absDir,
+		WalkWithSymlinks(),
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		[]string{
+			"aaa_link/real_dir/file.proto",
+			"real_dir/file.proto",
+			"top.proto",
+		},
+		filePaths,
+	)
+}
+
 func testWalkGetRegularFilePaths(dirPath string, options ...WalkOption) ([]string, error) {
 	var filePaths []string
 	if err := Walk(
